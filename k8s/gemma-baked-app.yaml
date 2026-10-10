@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemma-1b-baked
+  namespace: vllm-gemma-3-x86
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: gemma-1b-baked
+  template:
+    metadata:
+      labels:
+        app: gemma-1b-baked
+    spec:
+      serviceAccountName: default
+      containers:
+      - name: vllm-server
+        image: image-registry.openshift-image-registry.svc:5000/vllm-gemma-3-x86/gemma-1b-vllm:latest
+        imagePullPolicy: Always
+        env:
+          - name: VLLM_CPU_KVCACHE_SPACE
+            value: "1"
+          - name: OMP_NUM_THREADS
+            value: "4"
+        ports:
+          - containerPort: 8000
+        resources:
+          requests:
+            memory: "6Gi"
+            cpu: "2"
+          limits:
+            memory: "8Gi"
+            cpu: "6"
+        volumeMounts:
+          - name: dshm
+            mountPath: /dev/shm
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 90
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: "2Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gemma-1b-baked
+  namespace: vllm-gemma-3-x86
+spec:
+  ports:
+  - port: 80
+    targetPort: 8000
+  selector:
+    app: gemma-1b-baked
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: gemma-1b-baked
+  namespace: vllm-gemma-3-x86
+spec:
+  to:
+    kind: Service
+    name: gemma-1b-baked
